@@ -233,3 +233,182 @@ galton %>%
 model <- lm(childHeight ~ parentHeight, data = galton)
 summary(model)
 
+# Course 7 - Section 2.4 -------------------------------------------------------
+
+data(Teams)
+data(Batting)
+
+Teams <- 
+  Teams %>%
+  as_tibble() %>%
+  filter(yearID %in% 2002)
+
+Teams %>%
+  mutate(pa_game = (AB+BB)/G) %>%
+  summarize(pa_per_game = mean(pa_game))
+
+pa_per_game <- Batting %>% 
+  filter(yearID == 2002) %>% 
+  group_by(teamID) %>%
+  summarize(pa_per_game = sum(AB+BB)/max(G)) %>% 
+  .$pa_per_game %>% 
+  mean
+
+TeamA <-
+  data.frame(BB = 2,
+             H = 4,
+             X2B = 1,
+             X3B = 0,
+             HR = 1)
+
+TeamB <-
+  data.frame(BB = 1,
+             H = 6,
+             X2B = 2,
+             X3B = 1,
+             HR = 0)
+
+bothTeams <- bind_rows(TeamA,TeamB)
+
+
+model <- 
+Batting %>%
+  filter(yearID %in% 1961:2020) %>%
+  mutate(PA = AB+BB) %>%
+  select(playerID,yearID,PA,BB,H,X2B,X3B,HR,R,G) %>%
+  group_by(playerID) %>%
+  summarize(PA = sum(PA),
+            BB = sum(BB)/sum(PA) * pa_per_game,
+            H = sum(H-X2B-X3B-HR)/sum(PA) * pa_per_game,
+            X2B = sum(X2B)/sum(PA) * pa_per_game,
+            X3B = sum(X3B)/sum(PA) * pa_per_game,
+            HR = sum(HR)/sum(PA) * pa_per_game,
+            R = sum(R)/sum(PA) * pa_per_game) %>%
+  filter(PA >= 100) %>%
+  select(-PA) %>%
+  ungroup() %>%
+  lm(R ~ BB + H + X2B + X3B + HR, data = .)
+
+coefs <- tidy(model, conf.int = TRUE)
+
+bothTeams %>%
+  mutate(R_hat = predict(model, newdata = .))
+
+bothTeams %>%
+  mutate(singles = H,
+         doubles = X2B,
+         triples = X3B) %>%
+  mutate(R_hat = predict(fit, newdata = .))
+
+model2 <- 
+  Teams %>%
+  filter(yearID %in% 1961:2020) %>%
+  mutate(PA = AB+BB) %>%
+  select(teamID,yearID,PA,BB,H,X2B,X3B,HR,R,G) %>%
+  group_by(teamID) %>%
+  summarize(PA = sum(PA),
+            BB = sum(BB)/sum(PA) * pa_per_game,
+            H = sum(H-X2B-X3B-HR)/sum(PA) * pa_per_game,
+            X2B = sum(X2B)/sum(PA) * pa_per_game,
+            X3B = sum(X3B)/sum(PA) * pa_per_game,
+            HR = sum(HR)/sum(PA) * pa_per_game,
+            R = sum(R)/sum(PA) * pa_per_game) %>%
+  filter(PA >= 100) %>%
+  select(-PA) %>%
+  ungroup() %>%
+  lm(R ~ BB + H + X2B + X3B + HR, data = .)
+
+bothTeams %>%
+  mutate(R_hat = predict(model2, newdata = .))
+
+bothTeams %>%
+  mutate(R_hat = predict(model, newdata = .))
+
+bothTeams %>%
+  mutate(singles = H,
+         doubles = X2B,
+         triples = X3B) %>%
+  mutate(R_hat = predict(fit, newdata = .))
+
+
+# BB / HR on R
+
+model <- 
+Teams %>%
+  filter(yearID == 1971) %>%
+  select(teamID,BB,HR,R) %>%
+  lm(R ~ BB + HR, data = .)
+  
+tidy(model, conf.int = TRUE)
+
+Teams %>%
+  filter(yearID %in% 1961:2018) %>%
+  select(yearID,teamID,BB,HR,R) %>%
+  group_by(yearID) %>%
+  do(tidy(lm(R ~ BB + HR, data = .), conf.int = TRUE)) %>%
+  filter(term == 'BB') %>%
+  ggplot(aes(x = yearID, y = estimate)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high))
+
+Teams %>%
+  filter(yearID %in% 1961:2018) %>%
+  select(yearID,teamID,BB,HR,R) %>%
+  group_by(yearID) %>%
+  do(tidy(lm(R ~ BB + HR, data = .), conf.int = TRUE)) %>%
+  filter(term == 'BB') %>%
+  lm(estimate ~ yearID, data = .) %>%
+  tidy(conf.int = TRUE)
+
+# Test -------------------------------------------------------------------------
+
+
+data(Teams)
+data(Batting)
+
+
+
+# regression with BB, singles, doubles, triples, HR
+fit <- Teams %>% 
+  filter(yearID %in% 1961:2001) %>% 
+  mutate(BB = BB / G, 
+         singles = (H - X2B - X3B - HR) / G, 
+         doubles = X2B / G, 
+         triples = X3B / G, 
+         HR = HR / G,
+         R = R / G) %>%  
+  lm(R ~ BB + singles + doubles + triples + HR, data = .)
+coefs <- tidy(fit, conf.int = TRUE)
+coefs
+
+# predict number of runs for each team in 2002 and plot
+Teams %>% 
+  filter(yearID %in% 2002) %>% 
+  mutate(BB = BB/G, 
+         singles = (H-X2B-X3B-HR)/G, 
+         doubles = X2B/G, 
+         triples =X3B/G, 
+         HR=HR/G,
+         R=R/G)  %>%
+  select(BB, singles, doubles, triples, HR) %>%
+  mutate(R_hat = predict(fit, newdata = .)) %>%
+  ggplot(aes(R_hat, R, label = teamID)) + 
+  geom_point() +
+  geom_text(nudge_x=0.1, cex = 2) + 
+  geom_abline()
+
+
+a <- Teams %>% 
+  filter(yearID %in% 2002) %>% 
+  mutate(BB = BB/G, 
+         singles = (H-X2B-X3B-HR)/G, 
+         doubles = X2B/G, 
+         triples =X3B/G, 
+         HR=HR/G,
+         R=R/G)  %>%
+  select(BB, singles, doubles, triples, HR)
+
+
+
+
