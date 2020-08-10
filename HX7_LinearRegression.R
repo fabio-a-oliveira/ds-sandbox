@@ -5,6 +5,7 @@ library(ggplot2)
 library(Lahman)
 library(HistData)
 library(broom)
+library(dslabs)
 
 # Course 7 - Section 1.1 -------------------------------------------------------
 
@@ -361,11 +362,149 @@ Teams %>%
   lm(estimate ~ yearID, data = .) %>%
   tidy(conf.int = TRUE)
 
+
+# Course 7 - Section 2 - Assessment --------------------------------------------
+
+data(Teams)
+
+Teams_small <- Teams %>% 
+  filter(yearID %in% 1961:2001) %>% 
+  mutate(avg_attendance = attendance/G)
+
+Teams_small %>%
+  mutate(avg_Runs = R/G) %>%
+  select(yearID,teamID,avg_Runs,avg_attendance) %>%
+  lm(avg_attendance ~ avg_Runs, data = .) %>%
+  tidy(conf.int = TRUE)
+
+Teams_small %>%
+  mutate(avg_HR = HR/G) %>%
+  select(yearID,teamID,avg_HR,avg_attendance) %>%
+  lm(avg_attendance ~ avg_HR, data = .) %>%
+  tidy(conf.int = TRUE)
+
+Teams_small %>%
+  select(yearID,teamID,W,avg_attendance) %>%
+  lm(avg_attendance ~ W, data = .) %>%
+  tidy(conf.int = TRUE)
+
+Teams_small %>%
+  select(yearID,teamID,avg_attendance) %>%
+  lm(avg_attendance ~ yearID, data = .) %>%
+  tidy(conf.int = TRUE)
+
+Teams_small %>%
+  mutate(avg_Runs = R/G) %>%
+  summarize(Runs = mean(avg_Runs),
+            Attendance = mean(avg_attendance))
+
+Teams_small %>%
+  summarize(cor_W_R = cor(W,R/G),
+            cor_W_HR = cor(W,HR/G))
+
+Teams_small %>%
+  mutate(W_strata = round(W/10,0)*10,
+         avg_R = R / G) %>%
+  group_by(W_strata) %>%
+  do(tidy(lm(avg_attendance ~ avg_R,data = .),conf.int = FALSE)) %>%
+  filter(term == 'avg_R')
+
+Teams_small %>%
+  mutate(W_strata = round(W/10,0)*10,
+         avg_HR = HR / G) %>%
+  group_by(W_strata) %>%
+  do(tidy(lm(avg_attendance ~ avg_HR,data = .),conf.int = FALSE)) %>%
+  filter(term == 'avg_HR')
+
+model <- 
+Teams_small %>%
+  mutate(avg_attendance = attendance/G,
+         avg_R = R/G,
+         avg_HR = HR/G) %>%
+  lm(avg_attendance ~ avg_R + avg_HR + W + yearID, data = .)
+
+predict(model, data.frame(avg_R = 5,
+                          avg_HR = 1.2,
+                          W = 80,
+                          yearID = 1960))
+
+data(Teams)
+Teams %>%
+  filter(yearID %in% 2002) %>%
+  mutate(avg_attendance = attendance/G,
+         avg_HR = HR/G,
+         avg_R = R/G) %>%
+  select(teamID,avg_attendance,avg_R,avg_HR,W) %>%
+  mutate(yearID = 2002) %>%
+  mutate(predicted_attendance = predict(model,.)) %>%
+  summarize(correlation = cor(avg_attendance,predicted_attendance))
+
+predict(model,Teams)
+
+#   slice_max(n=1,order_by=estimate)
+
+# Course 7 - Section 3 ---------------------------------------------------------
+
+data("research_funding_rates")
+research_funding_rates
+
+two_by_two <- 
+research_funding_rates %>%
+  summarise(yay_men = sum(awards_men),
+            nay_men = sum(applications_men) - sum(awards_men),
+            yay_women = sum(awards_women),
+            nay_women = sum(applications_women) - sum(awards_women)) %>%
+  transmute(men = str_c(yay_men,nay_men, sep = ","),
+            women = str_c(yay_women,nay_women, sep = ",")) %>%
+  gather(key = 'gender',
+         value = 'yaynay',
+         men:women) %>%
+  transmute(gender = gender,
+            yay = str_split(yaynay,',',n=2,simplify=TRUE)[,1],
+            nay = str_split(yaynay,',',n=2,simplify=TRUE)[,2]) %>%
+  mutate(yay = as.numeric(yay),
+         nay = as.numeric(nay))
+
+two_by_two %>%
+  group_by(gender) %>%
+  summarise(percentage_awarded = 100*yay/(yay+nay))
+
+two_by_two %>%
+  select(-gender) %>%
+  chisq.test() %>%
+  tidy()
+
+dat <- research_funding_rates %>% 
+  mutate(discipline = reorder(discipline, success_rates_total)) %>%
+  rename(success_total = success_rates_total,
+         success_men = success_rates_men,
+         success_women = success_rates_women) %>%
+  gather(key, value, -discipline) %>%
+  separate(key, c("type", "gender")) %>%
+  spread(type, value) %>%
+  filter(gender != "total")
+
+dat %>%
+  ggplot(aes(y = discipline, x = success, color=gender)) +
+  geom_point()
+
+dat %>%
+  ggplot(aes(y = discipline, x = applications, color=gender)) +
+  geom_point()
+
+dat %>%
+  group_by(discipline) %>%
+  summarize(application = sum(applications),
+            awards = sum(awards),
+            success = sum(awards)/sum(applications)) %>%
+  arrange(success)
+
+
 # Test -------------------------------------------------------------------------
 
 
 data(Teams)
-data(Batting)
+data(Batting) 
 
 
 
@@ -411,4 +550,10 @@ a <- Teams %>%
 
 
 
-
+research_funding_rates %>%
+  select(-applications_total,-awards_total,-success_rates_total) %>%
+  rename(success_men = success_rates_men,
+         success_women = success_rates_women) %>%
+  gather(key,value,-discipline) %>%
+  separate(key,into=c('what','who')) %>%
+  spread(what,value)
