@@ -193,6 +193,242 @@ y_hat <- ifelse(test$Petal.Length > cutoff.pl | test$Petal.Width > cutoff.pw,
 
 mean(y_actual == y_hat)
 
+# Section 2.2 ------------------------------------------------------------------
+
+# A = have disease
+# B = test is positive
+
+P_B_A <- .85 # sensitivity
+P_A <- .02 # prevalence
+P_notB_notA <- .90 # specificity
+P_B <- .98*.10 + .02*.85 # positive test rate
+
+P_A_B <- P_B_A * P_A / P_B
+P_A_B
+
+set.seed(1)
+disease <- sample(c(0,1), size=1e6, replace=TRUE, prob=c(0.98,0.02))
+test <- rep(NA, 1e6)
+test[disease==0] <- sample(c(0,1), size=sum(disease==0), replace=TRUE, prob=c(0.90,0.10))
+test[disease==1] <- sample(c(0,1), size=sum(disease==1), replace=TRUE, prob=c(0.15, 0.85))
+
+mean(test)
+mean(disease[test == 0])
+mean(disease[test == 1])
+mean(disease[test == 1]) / mean(disease)
+
+# heights
+
+data(heights)
+
+heights %>%
+  mutate(height = round(height)) %>%
+  group_by(height) %>%
+  summarize(p = mean(sex == "Male")) %>%
+  qplot(height,p,data=.)
+
+ps <- seq(0,1,.1)
+heights %>%
+  mutate(g = cut(height,quantile(height,ps),include.lowest=TRUE)) %>%
+  group_by(g) %>%
+  summarise(p = mean(sex == "Male"),
+            height = mean(height)) %>%
+  qplot(height,p,data=.)
+  
+Sigma <- 9*matrix(c(1,0.5,0.5,1), 2, 2)
+dat <- MASS::mvrnorm(n = 10000, c(69, 69), Sigma) %>%
+  data.frame() %>% setNames(c("x", "y"))
+
+plot(dat)
+
+ps <- seq(0, 1, 0.1)
+dat %>% 
+  mutate(g = cut(x,quantile(x,ps),include.lowest = TRUE)) %>%
+  group_by(g) %>%
+  summarise(x = mean(x),
+            y = mean(y)) %>%
+  qplot(x, y, data =.)
+
+
+
+
+
+# Section 3.1 ------------------------------------------------------------------
+
+# Q1
+
+set.seed(1, sample.kind="Rounding")
+n <- 100
+Sigma <- 9*matrix(c(1.0, 0.5, 0.5, 1.0), 2, 2)
+dat <- MASS::mvrnorm(n = 100, c(69, 69), Sigma) %>%
+  data.frame() %>% setNames(c("x", "y"))
+
+set.seed(1, sample.kind="Rounding")
+RMSE <- replicate(100,{
+  p <- createDataPartition(dat$y,times=1,p=.5,list=FALSE)
+  train <- slice(dat,-p)
+  test <- slice(dat,p)
+  fit <- train %>%
+    lm(y ~ x, data = .)
+  test %>%
+    mutate(y_hat = predict(fit,newdata=.)) %>%
+    mutate(E = y-y_hat,
+           SE = E^2) %>%
+    summarize(MSE = mean(SE)) %>%
+    mutate(RMSE = sqrt(MSE)) %>%
+    .$RMSE
+})
+mean(RMSE)
+sd(RMSE)
+
+# Q2
+
+RMSE <- function(n){
+  
+  Sigma <- 9*matrix(c(1.0, 0.5, 0.5, 1.0), 2, 2)
+  dat <- MASS::mvrnorm(n = n, c(69, 69), Sigma) %>%
+    data.frame() %>% setNames(c("x", "y"))
+  
+  rmse <- replicate(100,{
+    p <- createDataPartition(dat$y, times=1, p=.5, list=FALSE)
+    test <- slice(dat,p)
+    train <- slice(dat,-p)
+    fit <- lm(data = train, y ~ x)
+    y_hat <- predict(fit,test)
+    y <- test$y
+    rmse <- sqrt(mean((y-y_hat)^2))
+  })
+  
+  c(mean_rmse = mean(rmse),
+             sd_rmse = sd(rmse))
+}
+
+set.seed(1, sample.kind="Rounding")
+n <- c(100, 500, 1000, 5000, 10000)
+results <- sapply(n,RMSE)
+
+# Q4
+
+set.seed(1, sample.kind="Rounding")
+n <- 100
+Sigma <- 9*matrix(c(1.0, 0.95, 0.95, 1.0), 2, 2)
+dat <- MASS::mvrnorm(n = 100, c(69, 69), Sigma) %>%
+  data.frame() %>% setNames(c("x", "y"))
+
+set.seed(1, sample.kind="Rounding")
+RMSE <- replicate(100,{
+  p <- createDataPartition(dat$y,times=1,p=.5,list=FALSE)
+  train <- slice(dat,-p)
+  test <- slice(dat,p)
+  fit <- train %>%
+    lm(y ~ x, data = .)
+  test %>%
+    mutate(y_hat = predict(fit,newdata=.)) %>%
+    mutate(E = y-y_hat,
+           SE = E^2) %>%
+    summarize(MSE = mean(SE)) %>%
+    mutate(RMSE = sqrt(MSE)) %>%
+    .$RMSE
+})
+mean(RMSE)
+sd(RMSE)
+
+# Q6
+
+set.seed(1)
+Sigma <- matrix(c(1.0, 0.75, 0.75, 0.75, 1.0, 0.25, 0.75, 0.25, 1.0), 3, 3)
+dat <- MASS::mvrnorm(n = 100, c(0, 0, 0), Sigma) %>%
+  data.frame() %>% setNames(c("y", "x_1", "x_2"))
+
+cor(dat)
+
+set.seed(1, sample.kind="Rounding")
+p <- createDataPartition(dat$y, times=1, p=.5, list=FALSE)
+test <- slice(dat,p)
+train <- slice(dat, -p)
+
+lm_x1 <- lm(y ~ x_1, data = train)
+lm_x2 <- lm(y ~ x_2, data = train)
+lm_both <- lm(y ~ x_1 + x_2, data = train)
+
+test %>%
+  mutate(y_hat_x1 = predict(lm_x1, newdata=.),
+         y_hat_x2 = predict(lm_x2, newdata=.),
+         y_hat_both = predict(lm_both, newdata=.)) %>%
+  summarise(rmse_x1 = sqrt(mean((y-y_hat_x1)^2)),
+            rmse_x2 = sqrt(mean((y-y_hat_x2)^2)),
+            rmse_xboth = sqrt(mean((y-y_hat_both)^2)))
+
+# Q8
+
+set.seed(1)
+Sigma <- matrix(c(1.0, 0.75, 0.75, 0.75, 1.0, 0.95, 0.75, 0.95, 1.0), 3, 3)
+dat <- MASS::mvrnorm(n = 100, c(0, 0, 0), Sigma) %>%
+  data.frame() %>% setNames(c("y", "x_1", "x_2"))
+
+cor(dat)
+
+set.seed(1, sample.kind="Rounding")
+p <- createDataPartition(dat$y, times=1, p=.5, list=FALSE)
+test <- slice(dat,p)
+train <- slice(dat, -p)
+
+lm_x1 <- lm(y ~ x_1, data = train)
+lm_x2 <- lm(y ~ x_2, data = train)
+lm_both <- lm(y ~ x_1 + x_2, data = train)
+
+test %>%
+  mutate(y_hat_x1 = predict(lm_x1, newdata=.),
+         y_hat_x2 = predict(lm_x2, newdata=.),
+         y_hat_both = predict(lm_both, newdata=.)) %>%
+  summarise(rmse_x1 = sqrt(mean((y-y_hat_x1)^2)),
+            rmse_x2 = sqrt(mean((y-y_hat_x2)^2)),
+            rmse_xboth = sqrt(mean((y-y_hat_both)^2)))
+
+# Q1
+
+set.seed(2, sample.kind="Rounding")
+
+make_data <- function(n = 1000, p = 0.5, 
+                      mu_0 = 0, mu_1 = 2, 
+                      sigma_0 = 1,  sigma_1 = 1){
+  
+  y <- rbinom(n, 1, p)
+  f_0 <- rnorm(n, mu_0, sigma_0)
+  f_1 <- rnorm(n, mu_1, sigma_1)
+  x <- ifelse(y == 1, f_1, f_0)
+  
+  test_index <- createDataPartition(y, times = 1, p = 0.5, list = FALSE)
+  
+  list(train = data.frame(x = x, y = as.factor(y)) %>% slice(-test_index),
+       test = data.frame(x = x, y = as.factor(y)) %>% slice(test_index))
+}
+
+dat <- make_data()
+
+dat$train %>% ggplot(aes(x, color = y)) + geom_density()
+
+
+
+
+set.seed(1, sample.kind="Rounding")
+
+avg_1 <- seq(0,3,length.out = 25)
+
+accuracy <- sapply(avg_1,function(avg){
+  dat <- make_data(n=1000,p=.5,mu_0 = 0, mu_1 = avg, sigma_0 = 1, sigma_1 = 1)
+  fit = glm(data = dat$train, y ~ x, family="binomial")
+  y_hat <- ifelse(predict(fit,newdata=dat$test,type="response")>.5,1,0)
+  y <- dat$test$y
+  accuracy <- mean(y_hat == y)
+})
+
+plot(avg_1,accuracy)
+
+
+
+
+
 
 
 
