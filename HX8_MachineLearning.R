@@ -7,6 +7,9 @@ library('tidyverse')
 library('dslabs')
 library('caret')
 library('lubridate')
+library('purrr')
+library('pdftools')
+library('broom')
 
 # Assessment -------------------------------------------------------------------
 
@@ -424,6 +427,241 @@ accuracy <- sapply(avg_1,function(avg){
 })
 
 plot(avg_1,accuracy)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Section 3.2 ------------------------------------------------------------------
+
+# Q1
+
+fn <- system.file("extdata", "RD-Mortality-Report_2015-18-180531.pdf", package="dslabs")
+dat <- map_df(str_split(pdf_text(fn), "\n"), function(s){
+  s <- str_trim(s)
+  header_index <- str_which(s, "2015")[1]
+  tmp <- str_split(s[header_index], "\\s+", simplify = TRUE)
+  month <- tmp[1]
+  header <- tmp[-1]
+  tail_index  <- str_which(s, "Total")
+  n <- str_count(s, "\\d+")
+  out <- c(1:header_index, which(n==1), which(n>=28), tail_index:length(s))
+  s[-out] %>%
+    str_remove_all("[^\\d\\s]") %>%
+    str_trim() %>%
+    str_split_fixed("\\s+", n = 6) %>%
+    .[,1:5] %>%
+    as_data_frame() %>% 
+    setNames(c("day", header)) %>%
+    mutate(month = month,
+           day = as.numeric(day)) %>%
+    gather(year, deaths, -c(day, month)) %>%
+    mutate(deaths = as.numeric(deaths))
+}) %>%
+  mutate(month = recode(month, "JAN" = 1, "FEB" = 2, "MAR" = 3, "APR" = 4, "MAY" = 5, "JUN" = 6, 
+                        "JUL" = 7, "AGO" = 8, "SEP" = 9, "OCT" = 10, "NOV" = 11, "DEC" = 12)) %>%
+  mutate(date = make_date(year, month, day)) %>%
+  dplyr::filter(date <= "2018-05-01")
+
+dat %>%
+  ggplot(aes(date,deaths)) +
+  geom_point(color="black") +
+  geom_smooth(method = 'loess', color = 'red', span = .05, method.args = list(degree = 1))
+
+fit <- loess(deaths ~ as.numeric(date), dat, span = .05, degree = 1)
+
+dat %>%
+  mutate(smooth = predict(fit,newdata=.)) %>%
+  ggplot(aes(x = date, y = deaths)) +
+  geom_point(color='black') +
+  geom_line(aes(x = date, y = smooth), color = 'red', size = 2)
+
+# Q2
+
+dat %>%
+  mutate(day_of_year = yday(date),
+         smooth = predict(fit,newdata = .)) %>%
+  ggplot(aes(x=day_of_year, y = smooth, color = year)) +
+  geom_line()
+
+# Q3
+
+mnist_27$train %>% glm(y ~ x_2, family = "binomial", data = .) %>% tidy()
+
+dat <- mnist_27$train
+
+max(dat$x_2)
+min(dat$x_2)
+
+dat %>%
+  ggplot(aes(x=x_2,color=y)) +
+  geom_density()
+
+qplot(x_2, y, data = mnist_27$train)
+
+fit <- loess(as.numeric(y) ~ x_2, dat, degree = 1, span = .1)
+
+dat %>%
+  mutate(smooth = predict(fit,.)) %>%
+  ggplot(aes(x=x_2,y=as.numeric(y)-1)) +
+  geom_point(color = 'black') +
+  geom_line(aes(x=x_2,y=smooth-1), color = 'red') +
+  geom_hline(yintercept = .5, color = 'green')
+
+
+
+# Section 3.3 ------------------------------------------------------------------
+
+x <- matrix(rnorm(10*5),10,5)
+x
+dim(x)
+dim(x)[2]
+
+seq(nrow(x))
+x+seq(nrow(x))
+      
+# Q6
+
+dat <- read_mnist()
+train <- dat$train
+
+train
+str(train)
+
+mean(train$images > 50 & train$images < 205)
+
+rm(train,dat)
+
+# Section 4.1 ------------------------------------------------------------------
+
+dist(1,2)
+dist(c(1,2))
+dist(c(1,2,3))
+dist(1:5)
+dist(matrix(1:25,5,5))
+
+x
+x[order(x)]
+
+# Q1
+
+data("tissue_gene_expression")
+
+x <- tissue_gene_expression$x
+y <- tissue_gene_expression$y
+
+d <- dist(x)
+
+image(as.matrix(d))
+
+dist(x[1:2,])
+dist(x[39:40,])
+dist(x[73:74,])
+
+dist(x[c(1,2,39,40,73,74),]) 
+
+dist(x) %>% as.matrix %>% image
+
+# Q1
+
+set.seed(1, sample.kind = "Rounding")
+data('heights')
+
+index <- createDataPartition(heights$sex, p=.5, times=1, list=FALSE)
+heights_test <- heights[index,]
+heights_train <- heights[-index,]
+
+k <- seq(1,101,3)
+
+F_1 <- sapply(k,function(k){
+  fit <- knn3(data = heights_train, sex ~ height, k=k)
+  y_hat <- predict(fit, newdata=heights_test, type = "class")
+  F_meas(data = y_hat, reference = heights_test$sex) 
+  # accuracy <- mean(y_hat == heights_test$sex)
+})
+
+plot(k,F_1)
+max(F_1)
+k[which.max(F_1)]
+
+fit <- knn3(data = heights_train, sex ~ height, k = which.max(F_1))
+ref_heights <- data.frame(height = 45:85)
+cond_prob <- predict(fit, newdata=ref_heights) %>%
+  as_data_frame() %>%
+  bind_cols(ref_heights) %>%
+  gather('sex','probability',-height)
+
+cond_prob %>%
+  ggplot(aes(x=height, y=probability, color=sex)) +
+  geom_line()
+
+
+# Q2
+
+data("tissue_gene_expression")
+set.seed(1, sample.kind = "Rounding")
+
+x <- tissue_gene_expression$x
+y <- tissue_gene_expression$y
+
+index <- 
+  createDataPartition(y, p=.5, times=1, list=FALSE)
+
+x_test <- x[index,]
+y_test <- y[index]
+x_train <- x[-index,]
+y_train <- y[-index]
+
+k <- seq(1,11,2)
+
+accuracy <- sapply(k,function(k){
+  fit <- knn3(x_train, y_train, k=k)
+  y_hat <- predict(fit, newdata = x_test, type = "class")
+  accuracy <- mean(y_test == y_hat)
+})
+
+plot(k,accuracy)
+
+data.frame(k = k,
+           accuracy = accuracy)
+
+# Section 4.2 ------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
