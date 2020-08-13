@@ -6,10 +6,17 @@ gc()
 library('tidyverse')
 library('dslabs')
 library('caret')
+library('e1071')
 library('lubridate')
 library('purrr')
 library('pdftools')
 library('broom')
+library('matrixStats')
+
+install.packages("BiocManager")
+library("BiocManager")
+BiocManager::install("genefilter")
+library(genefilter)
 
 # Assessment -------------------------------------------------------------------
 
@@ -642,37 +649,175 @@ data.frame(k = k,
 
 # Section 4.2 ------------------------------------------------------------------
 
+# Cross-validation Q1 - Q7
 
+set.seed(1996, sample.kind="Rounding")
+n <- 1000
+p <- 10000
+x <- matrix(rnorm(n*p), n, p)
+colnames(x) <- paste("x", 1:ncol(x), sep = "_")
 
+y <- rbinom(n, 1, 0.5) %>% factor()
+x_subset <- x[ ,sample(p, 100)]
 
+fit <- train(x_subset, y, method = 'glm')
+fit$results
 
+tt <- colttests(x, y)
+pvals <- tt$p.value
+ind <- which(pvals < .01)
 
+x_subset <- x[,ind]
 
+fit <- train(x_subset, y, method = 'glm')
+fit$results
 
+fit <- train(x_subset, y, method = "knn", tuneGrid = data.frame(k = seq(101, 301, 25)))
+ggplot(fit)
 
+data("tissue_gene_expression")
+x <- tissue_gene_expression$x
+y <- tissue_gene_expression$y
+fit <- train(x,y,method="knn", tuneGrid = data.frame(k= seq(1,7,2)))
+fit$results
 
+# Bootstraping Q1 - Q2
 
+data('mnist_27')
+set.seed(1995, sample.kind="Rounding")
+indexes <- createResample(mnist_27$train$y, 10)
+glimpse(indexes)
+table(indexes$Resample01)
 
+set.seed(1995, sample.kind="Rounding")
+indexes <- createResample(mnist_27$train$y, 10, list=FALSE)
+sum(indexes == 3)
 
+# Bootstraping Q3
 
+y <- rnorm(100, 0, 1)
+qnorm(.75)
+quantile(y,.75)
 
+B <- 10000
 
+set.seed(1,sample.kind = "Rounding")
+stats <- replicate(B,{
+  y <- rnorm(100,0,1)
+  q <- quantile(y,.75)
+})
+data.frame(exp = mean(stats),
+           std = sd(stats))
 
+# Bootstraping Q4
 
+set.seed(1,sample.kind = "Rounding")
+y <- rnorm(100,0,1)
 
+set.seed(1,sample.kind = "Rounding")
+samples <- createResample(y,times=10, list=FALSE)
+colMeans(samples)
+colSds(samples)
 
+set.seed(1,sample.kind = "Rounding")
+ind <- createResample(y,times=10,list=FALSE)
+samples <- matrix(y[ind],
+                  nrow=dim(ind)[1],
+                  dimnames=attr(ind,'dimnames')) %>% 
+  as.data.frame()
+samples %>% summarize_all(quantile, probs=.75) %>%
+  gather('resample','quantile') %>%
+  summarize(avg_hat = mean(quantile),
+            std_hat = sd(quantile))
 
+# Q5
+set.seed(1,sample.kind = "Rounding")
+ind <- createResample(y,times=10000,list=FALSE)
 
+samples <- matrix(y[ind],
+                  nrow=dim(ind)[1],
+                  dimnames=attr(ind,'dimnames')) %>% 
+  as.data.frame()
 
+samples %>% summarize_all(quantile, probs=.75) %>%
+  gather('resample','quantile') %>%
+  summarize(avg_hat = mean(quantile),
+            std_hat = sd(quantile))
 
+# Section 4.3 ------------------------------------------------------------------
 
+# Q1, Q2
 
+data("tissue_gene_expression")
 
+set.seed(1993, sample.kind="Rounding")
+ind <- which(tissue_gene_expression$y %in% c("cerebellum", "hippocampus"))
+y <- droplevels(tissue_gene_expression$y[ind])
+x <- tissue_gene_expression$x[ind, ]
+x <- x[, sample(ncol(x), 10)]
 
+fit <- train(x,y,method='lda')
 
+means <- fit$finalModel$means %>%
+  as.data.frame() %>%
+  mutate(source = row.names(.)) %>%
+  gather('gene','mean',-source)
 
+means %>%
+  ggplot(aes(x = gene, y = mean, color = source)) +
+  geom_point()
+  
+# Q3, Q4
 
+set.seed(1993)
+ind <- which(tissue_gene_expression$y %in% c("cerebellum", "hippocampus"))
+y <- droplevels(tissue_gene_expression$y[ind])
+x <- tissue_gene_expression$x[ind, ]
+x <- x[, sample(ncol(x), 10)]
 
+fit <- train(x,y,method='qda')
+
+means <- fit$finalModel$means %>%
+  as.data.frame() %>%
+  mutate(source = row.names(.)) %>%
+  gather('gene','mean',-source)
+
+means %>%
+  ggplot(aes(x = gene, y = mean, color = source)) +
+  geom_point()
+
+# Q5
+
+fit <- train(x,y,method='lda', preProcess = "center")
+
+means <- fit$finalModel$means %>%
+  as.data.frame() %>%
+  mutate(source = row.names(.)) %>%
+  gather('gene','mean',-source)
+
+means %>%
+  ggplot(aes(x = gene, y = mean, color = source)) +
+  geom_point()
+
+# Q6
+
+set.seed(1993, sample.kind="Rounding")
+y <- tissue_gene_expression$y
+x <- tissue_gene_expression$x
+x <- x[, sample(ncol(x), 10)]
+
+fit <- train(x,y,method='lda', preProcess = "center")
+
+means <- fit$finalModel$means %>%
+  as.data.frame() %>%
+  mutate(tissue = row.names(.)) %>%
+  gather('gene','mean',-tissue)
+
+means %>%
+  ggplot(aes(x = gene, y = mean, color = tissue)) +
+  geom_point()
+
+# Section 5.1 ------------------------------------------------------------------
 
 
 
