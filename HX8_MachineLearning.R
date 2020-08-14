@@ -12,10 +12,12 @@ library('purrr')
 library('pdftools')
 library('broom')
 library('matrixStats')
+library('rpart')
+library('randomForest')
 
-install.packages("BiocManager")
+# install.packages("BiocManager")
 library("BiocManager")
-BiocManager::install("genefilter")
+# BiocManager::install("genefilter")
 library(genefilter)
 
 # Assessment -------------------------------------------------------------------
@@ -819,10 +821,140 @@ means %>%
 
 # Section 5.1 ------------------------------------------------------------------
 
+# Q1 - Q3
 
+n <- 1000
+sigma <- 0.25
+set.seed(1, sample.kind = "Rounding")
+x <- rnorm(n, 0, 1)
+y <- 0.75 * x + rnorm(n, 0, sigma)
+dat <- data.frame(x = x, y = y)
 
+fit <- rpart(y ~ ., data = dat)
+plot(fit, margin = .05)
+text(fit, cex = .75)
 
+dat <- 
+  dat %>%
+  mutate(y_hat = predict(fit, newdata=.))
 
+dat %>%
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_step(aes(y = y_hat), color = 'red', size = 2)
 
+# Q4 - Q5
 
+fit <- randomForest(y ~ x, data = dat)
+plot(fit)
 
+dat <- 
+  dat %>%
+  mutate(y_hat = predict(fit, newdata=.))
+
+dat %>%
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_step(aes(y = y_hat), color = 'red', size = 2)
+
+# Q6
+
+fit <- randomForest(y ~ x, data = dat, maxnodes = 25, nodesize = 50, importance = TRUE)
+plot(fit)
+
+dat <- 
+  dat %>%
+  mutate(y_hat = predict(fit, newdata=.))
+
+dat %>%
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_step(aes(y = y_hat), color = 'red', size = 2)
+
+fit$predicted - dat$y_hat
+
+# Section 5.2 ------------------------------------------------------------------
+
+# Q1
+
+data("tissue_gene_expression")
+
+set.seed(1991, sample.kind = "Rounding")
+fit <- train(y ~ . , 
+             data = as.data.frame(tissue_gene_expression),
+             method = 'rpart',
+             tuneGrid = data.frame(cp = seq(0, .1, .01)))
+fit
+confusionMatrix(fit)
+plot(fit)
+
+# Q2, Q3
+
+set.seed(1991, sample.kind = "Rounding")
+fit <- train(y ~ . , 
+             data = as.data.frame(tissue_gene_expression),
+             method = 'rpart',
+             tuneGrid = data.frame(cp = seq(0, .1, .01)),
+             control = rpart.control(minsplit = 0))
+fit
+confusionMatrix(fit)
+plot(fit)
+fit$finalModel
+plot(fit$finalModel,margin=.1, main = "Decision Tree")
+text(fit$finalModel,cex=.8)
+fit_rpart <- fit
+
+# Q4
+
+getModelInfo('rf')$rf
+
+y <- tissue_gene_expression$y
+x <- tissue_gene_expression$x %>% as.matrix
+
+set.seed(1991, sample.kind = "Rounding")
+
+mtry.values <- c(1:10,seq(50,200,25))
+# mtry.values <- 1
+# control = rf.control(nodesize=1)
+n <- 1
+
+fitRF <- train(y ~ .,
+               data = as.data.frame(tissue_gene_expression),
+               method = 'rf',
+               nodesize = 1,
+               tuneGrid = data.frame(mtry = mtry.values))
+
+fitRF2 <- train(x,y,
+               method = 'rf',
+               nodesize = 1,
+               tuneGrid = data.frame(mtry = mtry.values))
+
+fitRF3 <- train(x,y,
+                method = 'rf',
+                tuneGrid = data.frame(mtry = mtry.values))
+
+fitRF4 <- train(x,y,
+                method = 'rf',
+                nodesize = 60,
+                tuneGrid = data.frame(mtry = mtry.values))
+
+fitRF5 <- train(x,y,
+                method = 'rf',
+                nodesize = 1,
+                tuneGrid = data.frame(mtry = seq(50,200,25)))
+
+imp <- varImp(fitRF5) %>% .$importance
+tree_terms <- 
+  unique(fit_rpart$finalModel$frame$var[!(fit_rpart$finalModel$frame$var == "<leaf>")]) %>%
+  str_remove("^x.") %>%
+  as.data.frame()
+names(tree_terms) <- 'gene'
+
+tree_terms  
+imp
+
+imp %>%
+  mutate(gene = row.names(.)) %>%
+  mutate(rank = rank(-Overall)) %>%
+  right_join(tree_terms, by="gene") %>%
+  arrange(rank)
