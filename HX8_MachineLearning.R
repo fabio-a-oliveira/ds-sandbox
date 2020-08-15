@@ -20,6 +20,8 @@ library("BiocManager")
 # BiocManager::install("genefilter")
 library(genefilter)
 
+library('titanic')
+
 # Assessment -------------------------------------------------------------------
 
 data(heights)
@@ -436,24 +438,6 @@ accuracy <- sapply(avg_1,function(avg){
 })
 
 plot(avg_1,accuracy)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Section 3.2 ------------------------------------------------------------------
@@ -958,3 +942,280 @@ imp %>%
   mutate(rank = rank(-Overall)) %>%
   right_join(tree_terms, by="gene") %>%
   arrange(rank)
+
+# Section 5.3 ------------------------------------------------------------------
+
+options(digits = 3)
+
+# clean the data - `titanic_train` is loaded with the titanic package
+titanic_clean <- titanic_train %>%
+  mutate(Survived = factor(Survived),
+         Embarked = factor(Embarked),
+         Age = ifelse(is.na(Age), median(Age, na.rm = TRUE), Age), # NA age to median age
+         FamilySize = SibSp + Parch + 1) %>%    # count family members
+  select(Survived,  Sex, Pclass, Age, Fare, SibSp, Parch, FamilySize, Embarked)
+
+# Q1
+
+set.seed(42, sample.kind = "Rounding")
+ind <- createDataPartition(titanic_clean$Survived,
+                           times = 1,
+                           p = .2,
+                           list = FALSE)
+test <- titanic_clean[ind,]
+train <- titanic_clean[-ind,]
+
+nrow(train)
+nrow(test)
+train %>% summarize(pSurvived = mean(if_else(Survived == 1, 1, 0)))
+
+# Q2
+
+set.seed(3, sample.kind = "Rounding")
+
+test <- 
+  test %>%
+  mutate(Survived = if_else(Survived == 1, 1,0),
+         y_hat_guess1 = sample(c(0,1),nrow(.),replace = TRUE))
+
+test %>%
+  summarize(accuracy = mean(y_hat_guess1 == Survived))
+
+# Q3
+
+train %>%
+  group_by(Sex) %>%
+  mutate(Survived = if_else(Survived == 1, 1, 0)) %>%
+  summarize(SurvivalRate = mean(Survived))
+
+test <- 
+  test %>%
+  mutate(y_hat_guess2 = if_else(Sex == "female", 1, 0))
+
+test %>%
+  summarize(Accuracy = mean(y_hat_guess2 == as.numeric(as.character(Survived))))
+
+# Q4
+
+train %>%
+  group_by(Pclass) %>%
+  summarize(SurvivalRate = mean(as.numeric(as.character(Survived))))
+
+test <- 
+  test %>%
+  mutate(y_hat_guess3 = if_else(Pclass == 1, 1, 0))
+
+test %>%
+  summarize(Accuracy = mean(y_hat_guess3 == as.numeric(as.character(Survived))))
+
+train %>%
+  group_by(Pclass, Sex) %>%
+  summarize(SurvivalRate = mean(as.numeric(as.character(Survived)))) %>%
+  arrange(desc(SurvivalRate)) %>%
+  filter(SurvivalRate > .5)
+
+test <- 
+  test %>%
+  mutate(y_hat_guess4 = if_else(Sex == 'female' & Pclass != 3, 1, 0))
+
+test %>%
+  summarize(Accuracy = mean(y_hat_guess4 == as.numeric(as.character(Survived))))
+
+# Q5
+
+test <- 
+  test %>%
+  mutate_at(vars(Survived,y_hat_guess1,y_hat_guess2,y_hat_guess3,y_hat_guess4),
+            funs(as.factor(.)))
+str(test)
+
+# prediction by sex
+
+confusionMatrix(data = test$y_hat_guess2,
+                ref = test$Survived)
+
+# predition by class
+
+confusionMatrix(data = test$y_hat_guess3,
+                ref = test$Survived)
+
+# predition by class and sex
+
+confusionMatrix(data = test$y_hat_guess4,
+                ref = test$Survived)
+
+# Q6
+
+# prediction by sex
+
+F_meas(data = test$y_hat_guess2,
+       ref = test$Survived)
+
+# predition by class
+
+F_meas(data = test$y_hat_guess3,
+       ref = test$Survived)
+
+# predition by class and sex
+
+F_meas(data = test$y_hat_guess4,
+       ref = test$Survived)
+
+# Q7
+
+set.seed(1, sample.kind = "Rounding")
+fitLDA <- train(Survived ~ Fare,
+                method = 'lda', 
+                data = train)
+
+test <- 
+  test %>%
+  mutate(y_hat_lda = predict(fitLDA, newdata = .))
+
+confusionMatrix(data = test$y_hat_lda,
+                reference = test$Survived)
+
+set.seed(1, sample.kind = "Rounding")
+fitQDA <- train(Survived ~ Fare,
+                method = 'qda', 
+                data = train)
+test <- 
+  test %>%
+  mutate(y_hat_qda = predict(fitQDA, newdata = .))
+
+confusionMatrix(data = test$y_hat_qda,
+                reference = test$Survived)
+
+# Q8
+
+set.seed(1, sample.kind = "Rounding")
+fitGLM <- train(Survived ~ Age,
+                data = train,
+                method = 'glm')
+test <- 
+  test %>%
+  mutate(y_hat_glm = predict(fitGLM, newdata = .))
+
+confusionMatrix(data = test$y_hat_glm,
+                ref = test$Survived)
+
+set.seed(1, sample.kind = "Rounding")
+fitGLM2 <- train(Survived ~ Sex + Pclass + Fare + Age,
+                   data = train,
+                   method = 'glm')
+test <- 
+  test %>%
+  mutate(y_hat_glm2 = predict(fitGLM2, newdata = .))
+
+confusionMatrix(data = test$y_hat_glm2,
+                ref = test$Survived)
+
+set.seed(1, sample.kind = "Rounding")
+fitGLMall <- train(Survived ~ .,
+                 data = train,
+                 method = 'glm')
+test <- 
+  test %>%
+  mutate(y_hat_glm_all = predict(fitGLMall, newdata = .))
+
+confusionMatrix(data = test$y_hat_glm_all,
+                ref = test$Survived)
+
+# Q9
+
+set.seed(6, sample.kind = "Rounding")
+fitKNN <- train(Survived ~ .,
+                data = train,
+                method = 'knn',
+                tuneGrid = data.frame(k = seq(3,51,2)))
+
+plot(fitKNN)
+
+test <-
+  test %>%
+  mutate(y_hat_knn = predict(fitKNN, newdata = .))
+
+confusionMatrix(data = test$y_hat_knn,
+                reference = test$Survived)
+
+# Q10
+
+suppressWarnings(set.seed(8, sample.kind = "Rounding"))
+fitKNN2 <- train(Survived ~ .,
+                 data = train,
+                 method = 'knn',
+                 tuneGrid = data.frame(k = seq(3,51,2)),
+                 trControl = trainControl(method = "cv"))
+
+test <- 
+  test %>%
+  mutate(y_hat_knn2 = predict(fitKNN2, newdata = .))
+
+confusionMatrix(data = test$y_hat_knn2,
+                reference = test$Survived)
+
+# Q11
+
+suppressWarnings(set.seed(10,sample.kind = "Rounding"))
+
+fitTree <- train(Survived ~ .,
+                 data = train,
+                 method = 'rpart',
+                 tuneGrid = data.frame(cp = seq(0,.05,.002)))
+
+test <- 
+  test %>%
+  mutate(y_hat_tree = predict(fitTree, newdata = .))
+
+
+with(test, confusionMatrix(data = y_hat_tree,
+                           reference = Survived))
+
+plot(fitTree)
+plot(fitTree$finalModel,margin=.05)
+text(fitTree$finalModel,cex = .7)
+
+passengers <- 
+  tribble(~Sex, ~Age, ~Pclass, ~Fare, ~SibSp, ~Parch, ~FamilySize, ~Embarked,
+          'male', 28, 0, 0, 0, 0, 0, '', 
+          'female', 0, 2, 0, 0, 0, 0, '', 
+          'female',0,3,8,0, 0, 0, '',
+          'male',5,0, 0,4, 0, 0,'',
+          'female',0,3,25,0, 0, 0, '',
+          'female',17,1,0,2, 0, 0,'',
+          'male',17,1,0,2, 0, 0,'')
+
+passengers <- 
+  train %>%
+  select(-Survived) %>%
+  add_case(passengers) %>%
+  tail(7) %>%
+  mutate(y_hat = predict(fitTree, newdata = .))
+
+passengers
+
+# Q12
+
+suppressWarnings(set.seed(14,sample.kind = "Rounding"))
+fitRF <- train(Survived ~ .,
+               data = train,
+               method = 'rf',
+               tuneGrid = data.frame(mtry = 1:7),
+               ntree = 100)
+test <-
+  test %>%
+  mutate(y_hat_rf = predict(fitRF, newdata = .))
+
+confusionMatrix(data = test$y_hat_rf,
+                reference = test$Survived)
+
+varImp(fitRF)
+
+
+
+
+
+
+
+
+
