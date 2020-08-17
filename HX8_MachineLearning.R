@@ -1211,6 +1211,407 @@ confusionMatrix(data = test$y_hat_rf,
 
 varImp(fitRF)
 
+# Section 6.1 ------------------------------------------------------------------
+
+# Q1
+
+models <- c("glm", 
+            "lda", 
+            "naive_bayes", 
+            "svmLinear", 
+            "knn", 
+            "gamLoess", 
+            "multinom", 
+            "qda", 
+            "rf", 
+            "adaboost")
+
+suppressWarnings(set.seed(1,sample.kind="Rounding"))
+
+data("mnist_27")
+
+fits <- lapply(models, function(model){ 
+  print(model)
+  train(y ~ ., method = model, data = mnist_27$train)
+}) 
+
+names(fits) <- models
+
+# Q2
+
+y_hat <- sapply(models,function(model){
+  predict(fits[model],
+          newdata = mnist_27$test)
+}) %>%
+  as.data.frame()
+
+names(y_hat) <- models
+glimpse(y_hat)
+
+# Q3
+
+accuracy <- 
+  y_hat %>%
+  summarize_all(.funs = function(y_hat){mean(y_hat == mnist_27$test$y)})
+
+accuracy %>% as.numeric %>% mean()
+
+# Q4
+
+predictions <- 
+  y_hat %>%
+  mutate(case = 1:nrow(.)) %>%
+  pivot_longer(cols = -case,
+               names_to = 'method',
+               values_to = 'prediction') %>%
+  group_by(case) %>%
+  summarize(most_voted = if_else(sum(prediction == 7) > 5,7,2)) %>%
+  transmute(most_voted = as.factor(most_voted))
+
+y_hat <- 
+  predictions %>%
+  select(most_voted) %>%
+  bind_cols(y_hat) %>%
+  mutate(most_voted = as.factor(most_voted))
+
+accuracy <- 
+  y_hat %>%
+  summarize_all(.funs = function(y_hat){mean(y_hat == mnist_27$test$y)})
+
+accuracy
+
+# Q6
+
+Accuracy <- sapply(models, function(model){
+  accuracy <- fits[[model]]$results$Accuracy %>% max()
+})
+
+mean(Accuracy)
+
+# Q7
+
+y_hat_ensemble <- 
+  y_hat %>%
+  select(glm,naive_bayes,knn,gamLoess,qda,rf,adaboost) %>%
+  mutate(case = 1:nrow(y_hat)) %>%
+  pivot_longer(cols = -case,
+               names_to = 'method',
+               values_to = 'prediction') %>%
+  group_by(case) %>%
+  summarize(most_voted = ifelse(sum(prediction == 7)>=4,7,2)) %>%
+  transmute(most_voted = as.factor(most_voted))
+
+
+voted_accuracy <- mean(y_hat_ensemble == as.data.frame(mnist_27$test$y))
+
+# Section 6.2 ------------------------------------------------------------------
+
+data("movielens")
+
+# Q1
+
+ratings_by_year <- 
+  movielens %>%
+  group_by(movieId,title) %>% 
+  summarize(counts = n(),
+            year = median(year))
+
+ratings_by_year %>% 
+  group_by(year) %>% 
+  summarize(median = median(counts)) %>%
+  top_n(5,median)
+  
+
+ratings_by_year %>% 
+  ggplot(aes(x=year, y=counts)) +
+  geom_point(alpha = .1) +
+  scale_y_continuous(trans = 'sqrt') +
+  geom_smooth(method = 'lm')
+
+# Q2
+
+ratings_per_year <- 
+  ratings_by_year %>% 
+  mutate(avg_ratings_per_year = counts/(2018-year))
+
+avg_ratings <- 
+  movielens %>% 
+  group_by(movieId) %>% 
+  summarize(avg_rating = mean(rating))
+
+options(tibble.print_max = 25)
+
+movies <- left_join(ratings_per_year, avg_ratings, by='movieId') %>% 
+  ungroup() 
+
+movies %>% 
+  slice_max(order_by=avg_ratings_per_year, n=25)
+
+# Q3
+
+movies %>% 
+  filter(year >= 1993) %>%
+  mutate(strata = round(avg_ratings_per_year)) %>%
+  ggplot(aes(x = strata, y = avg_rating)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
+
+# Q5
+
+movielens %>% 
+  mutate(date = as_datetime(timestamp))
+
+# Q6
+
+movielens %>% 
+  mutate(date = round_date(as_datetime(timestamp),'week')) %>%
+  group_by(date) %>% 
+  summarise(avg_rating = mean(rating)) %>% 
+  ggplot(aes(x = date, y = avg_rating)) +
+  geom_point(alpha = .1) +
+  geom_smooth(method = 'loess')
+
+# Q8
+
+popular_genres <-
+  movielens %>% 
+  group_by(genres) %>% 
+  summarize(count = n()) %>%
+  filter(count > 1000)
+
+movielens %>% 
+  filter(genres %in% popular_genres$genres) %>%
+  group_by(genres) %>% 
+  summarize(avg_rating = mean(rating),
+            min = avg_rating - sd(rating),
+            max = avg_rating + sd(rating)) %>% 
+  arrange(desc(avg_rating)) %>%
+  ggplot(aes(y = reorder(genres,avg_rating), x = avg_rating)) +
+  geom_errorbar(aes(xmin = min, xmax = max)) +
+  geom_point()
+
+# Section 6.3 ------------------------------------------------------------------
+
+# Regularization - Q1
+
+options(digits=7)
+
+suppressWarnings(set.seed(1986, sample.kind = "Rounding"))
+n <- round((2^rnorm(1000,8,1)))
+suppressWarnings(set.seed(1, sample.kind = "Rounding"))
+mu <- round(80 + 2*rt(1000,5))
+schools <- data.frame(id = paste('PS',1:1000),
+                      size = n,
+                      quality = mu,
+                      rank = rank(-mu))
+
+schools %>%
+  slice_max(n=10,quality)
+
+suppressWarnings(set.seed(1, sample.kind = "Rounding"))
+mu <- round(80 + 2*rt(1000, 5))
+
+scores <- sapply(1:nrow(schools),function(i){
+  rnorm(schools$size[i],schools$quality,30) %>% mean()
+})
+
+schools <- 
+  schools %>% 
+  mutate(score = scores)
+
+slice_max(schools,n=10,order_by=score)
+
+
+# correction
+
+set.seed(1986, sample.kind="Rounding")
+n <- round(2^rnorm(1000, 8, 1))
+
+set.seed(1, sample.kind="Rounding")
+mu <- round(80 + 2*rt(1000, 5))
+range(mu)
+schools <- data.frame(id = paste("PS",1:1000),
+                      size = n,
+                      quality = mu,
+                      rank = rank(-mu))
+
+schools %>% top_n(10, quality) %>% arrange(desc(quality))
+
+set.seed(1, sample.kind="Rounding")
+mu <- round(80 + 2*rt(1000, 5))
+
+scores <- sapply(1:nrow(schools), function(i){
+  scores <- rnorm(schools$size[i], schools$quality[i], 30)
+  scores
+})
+schools <- schools %>% mutate(score = sapply(scores, mean))
+
+slice_max(schools,n=10,order_by=score)
+
+# Q2
+
+schools %>%
+  summarise(median_all = median(size),
+            median_top = median(size[score >= 87.95731]))
+
+# Q3
+
+score_bottom <- 
+  schools %>%
+  slice_min(n = 10, order_by = score) %>%
+  summarize(cutoff = max(score))
+
+schools %>% 
+  summarize(median_all = median(size),
+            median_bottom = median(size[score <= score_bottom$cutoff]))
+
+# Q4
+
+top_schools <- schools %>% slice_max(n = 10, order_by = score)
+bottom_schools <- schools %>% slice_min(n = 10, order_by = score)
+
+schools %>% 
+  ggplot(aes(x = size, y = score)) +
+  geom_point(alpha = .2) +
+  geom_point(data = slice_max(schools,n=10,order_by=score),
+             mapping = aes(x = size, y = score),
+             color = 'blue', size = 2) + 
+  geom_point(data = slice_min(schools,n=10,order_by=score),
+             mapping = aes(x = size, y = score),
+             color = 'red', size = 2) +
+  geom_smooth(method = 'lm')
+
+# Q5
+
+overall <- mean(schools$score)
+alpha <- 25
+
+schools <- 
+  schools %>% 
+  mutate(reg_score = overall + sapply(scores,function(score){
+    sum(score-overall)/(length(score)+alpha)}))
+
+schools %>%
+  slice_max(n = 10, order_by = reg_score)
+
+schools %>% 
+  ggplot(aes(x = size, y = reg_score)) +
+  geom_point(alpha = .2) +
+  geom_point(data = slice_max(schools,n=10,order_by=reg_score),
+             mapping = aes(x = size, y = reg_score),
+             color = 'blue', size = 2) + 
+  geom_point(data = slice_min(schools,n=10,order_by=reg_score),
+             mapping = aes(x = size, y = reg_score),
+             color = 'red', size = 2) +
+  geom_smooth(method = 'lm')
+
+# Q6
+
+alpha <- 10:250
+RMSE <- sapply(alpha, function(alpha){
+  schools %>% 
+    mutate(reg_score = overall + sapply(scores,function(score){
+      sum(score-overall)/(length(score)+alpha)})) %>%
+    summarize(RMSE = sqrt(sum((quality-reg_score)^2)/1000))
+})
+
+alpha <- data.frame(alpha = alpha,
+                    RMSE = as.numeric(RMSE))
+
+slice_min(alpha,n=1,order_by=RMSE)
+
+# Q7
+
+schools <- 
+  schools %>% 
+  select(-reg_score) %>% 
+  mutate(bi = sapply(scores,function(score){
+    sum(score-overall)/(length(score)+135)})) %>% 
+  mutate(reg_score = overall + bi)
+  
+schools %>% 
+  ggplot(aes(x = size, y = reg_score)) +
+  geom_point(alpha = .2) +
+  geom_smooth(method = 'lm') +
+  geom_point(data = slice_max(schools, n = 10, order_by = reg_score),
+             mapping = aes(x = size, y = reg_score),
+             color = 'blue', size = 2) +
+  geom_point(data = slice_min(schools, n = 10, order_by = reg_score),
+             mapping = aes(x = size, y = reg_score),
+             color = 'red', size = 2)
+
+schools %>% 
+  slice_max(n = 10, order_by = reg_score)
+
+# Q8
+
+alpha <- 10:250
+RMSE <- sapply(alpha, function(alpha){
+  schools %>% 
+    mutate(reg_score = sapply(scores,function(score){
+      sum(score)/(length(score)+alpha)})) %>%
+    summarize(RMSE = sqrt(sum((quality-reg_score)^2)/1000))
+})
+
+alpha <- data.frame(alpha = alpha,
+                    RMSE = as.numeric(RMSE))
+
+slice_min(alpha,n=1,order_by=RMSE)
+
+
+
+
+
+
+
+# Section 7 --------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
