@@ -1390,7 +1390,7 @@ movielens %>%
   geom_errorbar(aes(xmin = min, xmax = max)) +
   geom_point()
 
-# Section 6.3 ------------------------------------------------------------------
+# Section 6.3 - Regularization -------------------------------------------------
 
 # Regularization - Q1
 
@@ -1558,13 +1558,286 @@ alpha <- data.frame(alpha = alpha,
 
 slice_min(alpha,n=1,order_by=RMSE)
 
+# Section 6.3 - Matrix Factorization -------------------------------------------
+
+suppressWarnings(set.seed(1987, sample.kind = "Rounding"))
+
+n <- 100
+k <- 8
+Sigma <- 64 * matrix(c(1, .75, .5, .75, 1, .5, .5, .5, 1), 3, 3)
+m <- MASS::mvrnorm(n, rep(0, 3), Sigma)
+m <- m[order(rowMeans(m), decreasing = TRUE),]
+y <- m %x% matrix(rep(1, k), nrow = 1) + matrix(rnorm(matrix(n*k*3)), n, k*3)
+colnames(y) <- c(paste(rep("Math",k), 1:k, sep="_"),
+                 paste(rep("Science",k), 1:k, sep="_"),
+                 paste(rep("Arts",k), 1:k, sep="_"))
+
+# Q1
+
+my_image <- function(x, zlim = range(x), ...){
+  colors = rev(RColorBrewer::brewer.pal(9, "RdBu"))
+  cols <- 1:ncol(x)
+  rows <- 1:nrow(x)
+  image(cols, rows, t(x[rev(rows),,drop=FALSE]), xaxt = "n", yaxt = "n",
+        xlab="", ylab="",  col = colors, zlim = zlim, ...)
+  abline(h=rows + 0.5, v = cols + 0.5)
+  axis(side = 1, cols, colnames(x), las = 2)
+}
+
+my_image(y)
+
+# Q2
+
+my_image(cor(y), zlim = c(-1,1))
+range(cor(y))
+axis(side = 2, 1:ncol(y), rev(colnames(y)), las = 2)
+
+# Q3
+
+s <- svd(y)
+names(s)
+
+y_svd <- s$u %*% diag(s$d) %*% t(s$v)
+max(abs(y - y_svd))
+
+ss_y <- apply(X = y,
+              MARGIN = 2,
+              FUN = function(col){sum(col^2)})
+
+ss_yv <- apply(X = y %*% s$v,
+               MARGIN = 2,
+               FUN = function(col){sum(col^2)})
+
+sum(ss_y)
+sum(ss_yv)
+
+# Q4
+
+plot(ss_y)
+plot(ss_yv)
+
+# Q5
+
+plot(sqrt(ss_yv),s$d)
+
+# Q6
+
+cumsum(s$d^2 / sum(s$d^2))
+
+# Q7
+
+U <- s$u
+d <- s$d
+D <- diag(d)
+V <- s$v
+
+UD <- t(apply(X = U,
+            MARGIN = 1,
+            FUN = function(l){l * d}))
+
+UD <- sweep(U,2,d,FUN = "*")
+
+identical(UD, U %*% diag(d))
+
+# Q8
+
+avg_std <- apply(X = y,
+                 MARGIN = 1,
+                 FUN = mean)
+
+plot(avg_std, UD[,1])
+
+# Q10
+
+plot(U[,1])
+plot(V[,1])
+
+M <- UD[,1] %*% t(V[,1])
+my_image(M)
+
+M <- M + UD[,2] %*% t(V[,2])
+my_image(M)
+
+M <- M + UD[,3] %*% t(V[,3])
+my_image(M)
+
+M <- M + UD[,4] %*% t(V[,4])
+my_image(M)
+
+M <- M + UD[,5] %*% t(V[,5])
+my_image(M)
+
+M <- M + UD[,6] %*% t(V[,6])
+my_image(M)
+
+M <- M + UD[,7] %*% t(V[,7])
+my_image(M)
+
+M <- M + UD[,8] %*% t(V[,8])
+my_image(M)
+
+M <- M + UD[,9] %*% t(V[,9])
+my_image(M)
+
+M <- M + UD[,10] %*% t(V[,10])
+my_image(M)
+
+my_image(y)
+
+# Q11
+
+y_hat_1 <- UD[,1] %*% t(V[,1])
+
+resid <- y - with(s,(u[, 1, drop=FALSE]*d[1]) %*% t(v[, 1, drop=FALSE]))
+my_image(cor(resid), zlim = c(-1,1))
+axis(side = 2, 1:ncol(y), rev(colnames(y)), las = 2)
+
+M <- UD[,2] %*% t(V[,2])
+my_image(M)
+my_image(resid)
+
+plot(U[,2])
+plot(V[,2])
+
+# Q12
+
+resid <- y - with(s,sweep(u[, 1:2], 2, d[1:2], FUN="*") %*% t(v[, 1:2]))
+my_image(cor(resid), zlim = c(-1,1))
+axis(side = 2, 1:ncol(y), rev(colnames(y)), las = 2)
+
+plot(U[,3])
+plot(V[,3])
+
+M <- UD[,3] %*% t(V[,3])
+my_image(M)
+my_image(resid)
+
+# Q13
+
+resid <- y - with(s,sweep(u[, 1:3], 2, d[1:3], FUN="*") %*% t(v[, 1:3]))
+my_image(cor(resid), zlim = c(-1,1))
+axis(side = 2, 1:ncol(y), rev(colnames(y)), las = 2)
+
+# Section 6.3 - Dimension Reduction --------------------------------------------
+
+data("tissue_gene_expression")
+
+genes <- 
+  tissue_gene_expression$x %>% 
+  as_tibble() %>% 
+  add_column(tissue = tissue_gene_expression$y, .before = 1)
+
+pc <- prcomp(tissue_gene_expression$x)
+
+plot(pc$sdev)
+
+# Q1
+
+data.frame(tissue = tissue_gene_expression$y, pc$x[,1:2]) %>%
+  ggplot(aes(x = PC1, y = PC2, color = tissue)) +
+  geom_point()
+
+# Q2
+
+avg <- rowMeans(tissue_gene_expression$x)
+PC1 = pc$x[,1]
+
+data.frame(tissue = tissue_gene_expression$y, 
+           PC1 = PC1,
+           avg = avg) %>%
+  ggplot(aes(x = avg, y = PC1, color = tissue)) +
+  geom_point()
+
+cor(PC1,avg)
+
+# Q3
+
+x <- tissue_gene_expression$x - rowMeans(tissue_gene_expression$x)
+x <- with(tissue_gene_expression, sweep(x, 1, rowMeans(x)))
+
+pc <- prcomp(x)
+
+data.frame(PC1 = pc$x[,1], 
+           PC2 = pc$x[,2], 
+           tissue = tissue_gene_expression$y) %>%
+  ggplot(aes(x = PC1, y = PC2, color = tissue)) +
+  geom_point()
+
+cor(rowMeans(x), pc$x[,1])
+cor(pc$x[,1],pc$x[,2])
+
+# Q4
+
+data.frame(pc$x[,1:10],
+           tissue = tissue_gene_expression$y) %>%
+  pivot_longer(-tissue, 
+               names_to = 'Principal Component',
+               values_to = 'weight') %>% 
+  ggplot(aes(x = tissue, y = weight)) +
+  geom_boxplot() +
+  facet_wrap(. ~ `Principal Component`) +
+  theme(axis.text.x = element_text(angle = 90))
+
+# Q5
+
+summary(pc)
+
+# playground
+
+image(as.matrix(pc$x[,1:20]), col = rev(RColorBrewer::brewer.pal(9, "RdBu")))
 
 
-
-
-
+# Section 6.3 - Clustering -----------------------------------------------------
 
 # Section 7 --------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
