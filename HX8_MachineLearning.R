@@ -14,6 +14,8 @@ library('broom')
 library('matrixStats')
 library('rpart')
 library('randomForest')
+library('RColorBrewer')
+library('gam')
 
 # install.packages("BiocManager")
 library("BiocManager")
@@ -1789,107 +1791,256 @@ image(as.matrix(pc$x[,1:20]), col = rev(RColorBrewer::brewer.pal(9, "RdBu")))
 
 # Section 6.3 - Clustering -----------------------------------------------------
 
-# Section 7 --------------------------------------------------------------------
+data("tissue_gene_expression")
+tge <- tissue_gene_expression
+rm(tissue_gene_expression)
 
+# Q1
 
+d <- dist(tge$x - rowMeans(tge$x))
 
+# Q2
 
+h <- hclust(d)
+plot(h, cex = .65)
 
+h1 <- cutree(h, k= 10)
+plot(h1, cex = .65)
 
+# Q3
 
+heatmap(tge$x)
 
+sds <- matrixStats::colSds(tissue_gene_expression$x)
+ind <- order(sds, decreasing = TRUE)[1:50]
+colors <- brewer.pal(7, "Dark2")[as.numeric(tissue_gene_expression$y)]
 
+hm <- heatmap(t(tge$x[,ind]),
+              col = brewer.pal(11,"RdBu"),
+              scale = "row",
+              ColSideColor = colors)
 
+hm2 <- heatmap(t(tge$x),
+               col = brewer.pal(11,"RdBu"),
+               scale = "row",
+               ColSideColor = colors)
 
+# Section 7 - Final Assessment -------------------------------------------------
 
+options(digits = 3)
+data(brca)
 
+# Q1
 
+glimpse(brca)
+table(brca$y)
+mean(brca$y == 'M')
+brca$x %>% colMeans() %>% which.max()
+brca$x %>% colSds() %>% which.min()
 
+# Q2
 
+brca_scaled <-
+  sweep(brca$x, 
+        MARGIN = 2,
+        colMeans(brca$x)) %>% 
+  sweep(x = .,
+        MARGIN = 2,
+        colSds(.),
+        FUN = '/')
 
+brca_scaled %>% colSds
+brca_scaled %>% colMeans
+brca_scaled %>% colMedians()
 
+# Q3
 
+d <- dist(brca_scaled) %>% as.matrix
 
+benign <- brca$y == "B"
+malignant <- brca$y == "M"
 
+d[1,benign] %>% mean()
+d[1,malignant] %>% mean()
 
+# Q4
 
+heatmap(as.matrix(dist(t(brca_scaled))))
 
+# Q5
 
+h <- 
+  brca_scaled %>% 
+  t() %>% 
+  dist() %>% 
+  hclust
 
+tree <- 
+  cutree(h, k = 5) %>% 
+  data.frame(value = .)
 
+# Q6
 
+pc <- prcomp(brca_scaled)
 
+# Q7
 
+data.frame(diagnosis = brca$y,
+           pc$x[,1:2]) %>% 
+  ggplot(aes(x = PC1, y = PC2, color = diagnosis))+
+  geom_point()
 
+# Q8
 
+data.frame(diagnosis = brca$y,
+           pc$x[,1:10]) %>% 
+  pivot_longer(cols = -diagnosis,
+               names_to = "PC",
+               values_to = "value") %>% 
+  ggplot(aes(x = diagnosis, y = value)) +
+  geom_boxplot() +
+  facet_wrap(. ~ PC, scales = 'free')
 
+# Q9
 
+suppressWarnings(set.seed(1,sample.kind = "Rounding"))
+test_index <- createDataPartition(brca$y, times = 1, p = 0.2, list = FALSE)
+test_x <- brca_scaled[test_index,]
+test_y <- brca$y[test_index]
+train_x <- brca_scaled[-test_index,]
+train_y <- brca$y[-test_index]
 
+mean(train_y == "B")
+mean(test_y == "B")
 
+# Q10
 
+predict_kmeans <- function(x, k) {
+  centers <- k$centers    # extract cluster centers
+  # calculate distance to cluster centers
+  distances <- sapply(1:nrow(x), function(i){
+    apply(centers, 1, function(y) dist(rbind(x[i,], y)))
+  })
+  max.col(-t(distances))  # select cluster with min distance to center
+}
 
+suppressWarnings(set.seed(3,sample.kind = "Rounding"))
 
+k <- kmeans(x = train_x,2)
 
+data.frame(type = train_y,
+           cluster = k$cluster) %>% 
+  ggplot(aes(x = cluster, y = type, color = type)) +
+  geom_point() +
+  geom_jitter()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+confusionMatrix(data = as.factor(if_else(predict_kmeans(test_x,k) == 1,"B","M")),
+                reference = test_y,
+                positive = "M")
+
+# Q11
+
+fit_glm <- train(train_x,
+                 train_y,
+                 method = 'glm')
+
+confusionMatrix(test_y,
+                reference = predict(fit_glm, newdata = test_x))
+
+# Q12
+
+fit_lda <- train(train_x,
+                 train_y,
+                 method = 'lda')
+
+confusionMatrix(test_y,
+                reference = predict(fit_lda, newdata = test_x))
+
+fit_qda <- train(train_x,
+                 train_y,
+                 method = 'qda')
+
+confusionMatrix(test_y,
+                reference = predict(fit_qda, newdata = test_x))
+
+# Q13
+
+suppressWarnings(set.seed(5,sample.kind = "Rounding"))
+
+fit_loess <- train(train_x,
+                   train_y,
+                   method = 'gamLoess')
+
+confusionMatrix(test_y,
+                reference = predict(fit_loess, newdata = test_x))
+
+# Q14
+
+suppressWarnings(set.seed(7,sample.kind = "Rounding"))
+
+fit_knn <- train(train_x,
+                 train_y,
+                 method = 'knn',
+                 tuneGrid = data.frame(k = seq(3,21,2)))
+
+confusionMatrix(test_y,
+                reference = predict(fit_knn, newdata = test_x))
+
+# Q15
+
+suppressWarnings(set.seed(9,sample.kind = "Rounding"))
+
+fit_rf <- train(train_x,
+                train_y,
+                method = 'rf',
+                tuneGrid = data.frame(mtry = c(3,5,7,9)),
+                importance = TRUE)
+
+confusionMatrix(test_y,
+                reference = predict(fit_rf, newdata = test_x))
+
+varImp(fit_rf)
+
+# Q16
+
+ensemble <- 
+  data.frame(sample = 1:length(test_y),
+             actual = test_y,
+             k_means = as.factor(if_else(predict_kmeans(test_x,k) == 1,"B","M")),
+             glm = predict(fit_glm, newdata = test_x),
+             lda = predict(fit_lda, newdata = test_x),
+             qda = predict(fit_qda, newdata = test_x),
+             loess = predict(fit_loess, newdata = test_x),
+             knn = predict(fit_knn, newdata = test_x),
+             rf = predict(fit_rf, newdata = test_x))
+
+
+ensemble %>% 
+  pivot_longer(cols = -c(sample,actual),
+               names_to = 'method',
+               values_to = 'vote') %>% 
+  group_by(sample,actual) %>% 
+  summarize(result = if_else(sum(vote == "M") > 3.5,"M","B")) %>% 
+  ungroup() %>% 
+  summarize(accuracy = mean(actual == result))
+
+full_methods <- 
+  ensemble %>% 
+  pivot_longer(cols = -c(sample,actual),
+               names_to = 'method',
+               values_to = 'vote') %>% 
+  group_by(sample,actual) %>% 
+  summarize(ensemble = if_else(sum(vote == "M") > 3.5,"M","B")) %>% 
+  select(ensemble) %>% 
+  left_join(x = .,
+            y = ensemble,
+            by = 'sample') %>% 
+  ungroup() %>% 
+  select(-sample, -actual)
+  
+accuracy <- 
+  full_methods %>% 
+  summarize_all(function(x){mean(x == test_y)})
+
+accuracy
 
