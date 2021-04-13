@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.ipynb_checkpoints
 sketch
 GloVe
 Tensorboard_logs
